@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="دفتر الفواتير: تطبيق بسيط لتسجيل الفواتير (الاسم، الرقم، المبلغ) مع لوحة معلومات، حسابات مستخدمين معزولة، وضع ليلي/نهاري، ودعم كامل للعربية RTL." />
+  <meta name="theme-color" content="#4f46e5" />
+  <title>دفتر الفواتير — سجّل فواتيرك ببساطة</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%A7%BE%3C/text%3E%3C/svg%3E" />
+
+  <!-- تطبيق المظهر المحفوظ قبل الرسم لمنع الوميض -->
+  <script>
+    try { if (localStorage.getItem('ib_theme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark'); } catch (e) {}
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+
+  <!-- مكتبة Supabase (تُستخدم فقط عند ربط المفاتيح من الإعدادات) -->
+  <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script defer src="js/db.js"></script>
+  <script defer src="js/app.js"></script>
+</head>
+<body>
+
+  <!-- زر تبديل الوضع الليلي/النهاري (ظاهر دائمًا) -->
+  <button id="themeBtn" class="fab" type="button" title="تبديل الوضع الليلي/النهاري" aria-label="تبديل الوضع الليلي/النهاري">🌙</button>
+
+  <!-- ================= شاشة الدخول / إنشاء الحساب ================= -->
+  <section id="authView" class="auth-wrap">
+    <div class="auth-card">
+      <div class="brand-big"><span class="logo">🧾</span> دفتر الفواتير</div>
+      <p class="auth-sub">سجّل فواتيرك: الاسم، الرقم، المبلغ — وبيانات كل مستخدم محفوظة منفصلة عن الآخرين.</p>
+
+      <div class="tabs" role="tablist">
+        <button type="button" id="tabLogin" class="tab is-active">تسجيل الدخول</button>
+        <button type="button" id="tabRegister" class="tab">حساب جديد</button>
+      </div>
+
+      <form id="loginForm" class="form">
+        <label class="field">
+          <span>البريد الإلكتروني</span>
+          <input id="liEmail" type="email" required autocomplete="email" placeholder="name@example.com" />
+        </label>
+        <label class="field">
+          <span>كلمة المرور</span>
+          <input id="liPass" type="password" required minlength="6" autocomplete="current-password" placeholder="••••••••" />
+        </label>
+        <p id="loginErr" class="form-err" hidden></p>
+        <button type="submit" class="btn primary block">دخول</button>
+        <button type="button" id="demoBtn" class="btn ghost block">🚀 تجربة سريعة (حساب تجريبي جاهز)</button>
+      </form>
+
+      <form id="registerForm" class="form" hidden>
+        <label class="field">
+          <span>الاسم</span>
+          <input id="rgName" type="text" required maxlength="40" autocomplete="name" placeholder="مثال: عبد العزيز" />
+        </label>
+        <label class="field">
+          <span>البريد الإلكتروني</span>
+          <input id="rgEmail" type="email" required autocomplete="email" placeholder="name@example.com" />
+        </label>
+        <label class="field">
+          <span>كلمة المرور (6 أحرف على الأقل)</span>
+          <input id="rgPass" type="password" required minlength="6" autocomplete="new-password" placeholder="••••••••" />
+        </label>
+        <label class="field">
+          <span>تأكيد كلمة المرور</span>
+          <input id="rgPass2" type="password" required minlength="6" autocomplete="new-password" placeholder="••••••••" />
+        </label>
+        <p id="regErr" class="form-err" hidden></p>
+        <button type="submit" class="btn primary block">إنشاء الحساب</button>
+      </form>
+
+      <div class="auth-foot">
+        <span id="modeBadge" class="mode-badge">💾 قاعدة بيانات محلية (localStorage)</span>
+        <button type="button" id="sbxBtn" class="link-btn">⚙️ ربط Supabase (اختياري)</button>
+      </div>
+    </div>
+    <p class="auth-note" id="authNote">🔐 الوضع المحلي: البيانات تُحفظ داخل متصفحك فقط — لكل مستخدم مساحة مستقلة عن الآخرين.</p>
+  </section>
+
+  <!-- ================= التطبيق ================= -->
+  <section id="appView" hidden>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand"><span class="logo">🧾</span> دفتر الفواتير</div>
+        <div class="top-actions">
+          <span id="modeBadgeApp" class="mode-badge light">💾 محلي</span>
+          <span id="userChip" class="chip" title=""></span>
+          <button type="button" id="logoutBtn" class="icon-btn" title="تسجيل الخروج" aria-label="تسجيل الخروج">⏻</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="container">
+      <section class="hero">
+        <div>
+          <h1>لوحة المعلومات</h1>
+          <p class="hero-sub"><span id="greet"></span> · <span id="today"></span></p>
+        </div>
+        <button type="button" id="addBtn" class="btn primary lg">＋ فاتورة جديدة</button>
+      </section>
+
+      <section class="stats" aria-label="إحصائيات سريعة">
+        <article class="stat"><span class="stat-label">عدد الفواتير</span><strong id="stCount" class="stat-num">0</strong></article>
+        <article class="stat"><span class="stat-label">إجمالي المبالغ</span><strong id="stTotal" class="stat-num">0</strong></article>
+        <article class="stat"><span class="stat-label">أعلى فاتورة</span><strong id="stMax" class="stat-num" title="">—</strong></article>
+        <article class="stat"><span class="stat-label">فواتير هذا الشهر</span><strong id="stMonth" class="stat-num">0</strong></article>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>المبالغ حسب الشهر</h2>
+          <span class="badge">آخر 6 أشهر</span>
+        </div>
+        <div id="chart" class="chart"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>سجل الفواتير</h2>
+          <input id="search" type="search" class="search" placeholder="🔎 ابحث بالاسم أو رقم الفاتورة..." aria-label="بحث في الفواتير" />
+        </div>
+        <div class="table-wrap">
+          <table id="invTable">
+            <thead>
+              <tr><th>اسم الفاتورة</th><th>رقم الفاتورة</th><th>المبلغ</th><th>التاريخ</th><th>إجراءات</th></tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+          </table>
+          <div id="emptyState" class="empty" hidden>
+            <div class="empty-emoji">🧾</div>
+            <p id="emptyText">لا توجد فواتير بعد — أضف أول فاتورة الآن ✨</p>
+            <button type="button" id="emptyAddBtn" class="btn ghost">＋ إضافة فاتورة</button>
+          </div>
+        </div>
+      </section>
+
+      <footer class="footer">
+        دفتر الفواتير · بياناتك محفوظة منفصلة لكل مستخدم · <span id="year"></span>
+      </footer>
+    </main>
+  </section>
+
+  <!-- ================= نافذة إضافة/تعديل فاتورة ================= -->
+  <dialog id="invDlg" aria-labelledby="invDlgTitle">
+    <form id="invForm">
+      <h3 id="invDlgTitle" class="dlg-title">فاتورة جديدة</h3>
+      <label class="field"><span>اسم الفاتورة</span><input id="fName" type="text" required maxlength="60" placeholder="مثال: فاتورة كهرباء" /></label>
+      <label class="field"><span>رقم الفاتورة</span><input id="fNum" type="text" required maxlength="30" placeholder="مثال: INV-2026-001" /></label>
+      <label class="field"><span>المبلغ</span><input id="fAmt" type="number" min="0.01" step="any" required inputmode="decimal" placeholder="مثال: 2500" /></label>
+      <p id="dlgErr" class="form-err" hidden></p>
+      <div class="dlg-actions">
+        <button type="button" id="dlgCancel" class="btn ghost">إلغاء</button>
+        <button type="submit" id="dlgSave" class="btn primary">حفظ</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ================= نافذة تأكيد الحذف ================= -->
+  <dialog id="confirmDlg" aria-labelledby="confirmTitle">
+    <h3 id="confirmTitle" class="dlg-title">تأكيد الحذف</h3>
+    <p id="confirmMsg" class="confirm-msg"></p>
+    <div class="dlg-actions">
+      <button type="button" id="confirmNo" class="btn ghost">إلغاء</button>
+      <button type="button" id="confirmYes" class="btn danger">نعم، احذف</button>
+    </div>
+  </dialog>
+
+  <!-- ================= نافذة ربط Supabase ================= -->
+  <dialog id="sbxDlg" aria-labelledby="sbxTitle">
+    <h3 id="sbxTitle" class="dlg-title">⚙️ ربط Supabase (اختياري)</h3>
+    <p class="confirm-msg">لتفعيل هذا الخيار: أنشئ مشروعًا على <b>supabase.com</b>، نفّذ ملف <code>supabase/schema.sql</code> من محرر SQL، ثم الصق رابط المشروع ومفتاح <code>anon</code> هنا. عند الربط تُحفظ الفواتير في Supabase وتُعزل بـ RLS تلقائيًا.</p>
+    <label class="field"><span>Project URL</span><input id="sbxUrl" type="url" placeholder="https://xxxx.supabase.co" /></label>
+    <label class="field"><span>anon public key</span><input id="sbxKey" type="text" placeholder="eyJhbGciOi..." /></label>
+    <p id="sbxErr" class="form-err" hidden></p>
+    <div class="dlg-actions">
+      <button type="button" id="sbxRemove" class="btn danger">إزالة الربط</button>
+      <button type="button" id="sbxCancel" class="btn ghost">إلغاء</button>
+      <button type="button" id="sbxSave" class="btn primary">حفظ وربط</button>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
