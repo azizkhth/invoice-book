@@ -80,11 +80,15 @@ const DB = (() => {
       return currentUser;
     },
     async list() {
-      return readJSON(invKeyOf(currentUser.id), []).map((i) => ({ ...i, amount: Number(i.amount) }));
+      return readJSON(invKeyOf(currentUser.id), []).map((i) => ({
+        ...i,
+        amount: Number(i.amount),
+        inv_date: i.inv_date ?? i.created_at, // فواتير قديمة قبل إضافة التاريخ
+      }));
     },
-    async add({ name, number, amount }) {
+    async add({ name, number, amount, inv_date }) {
       const list = readJSON(invKeyOf(currentUser.id), []);
-      const row = { id: uid(), name, number, amount: Number(amount), created_at: Date.now() };
+      const row = { id: uid(), name, number, amount: Number(amount), inv_date: Number(inv_date), created_at: Date.now() };
       list.push(row);
       localStorage.setItem(invKeyOf(currentUser.id), JSON.stringify(list));
       return row;
@@ -92,7 +96,7 @@ const DB = (() => {
     async update(id, patch) {
       const list = readJSON(invKeyOf(currentUser.id), []);
       const row = list.find((i) => i.id === id);
-      if (row) { Object.assign(row, patch, { updated_at: Date.now() }); localStorage.setItem(invKeyOf(currentUser.id), JSON.stringify(list)); }
+      if (row) { Object.assign(row, patch, { inv_date: Number(patch.inv_date), updated_at: Date.now() }); localStorage.setItem(invKeyOf(currentUser.id), JSON.stringify(list)); }
       return row;
     },
     async remove(id) {
@@ -131,15 +135,31 @@ const DB = (() => {
     async list() {
       const { data, error } = await sbx.from('invoices').select('*').order('created_at', { ascending: false });
       if (error) throw new Error(sbxError(error));
-      return (data || []).map((r) => ({ id: r.id, name: r.name, number: r.number, amount: Number(r.amount), created_at: new Date(r.created_at).getTime() }));
+      return (data || []).map((r) => ({
+        id: r.id, name: r.name, number: r.number, amount: Number(r.amount),
+        inv_date: r.inv_date ? new Date(r.inv_date + 'T00:00:00').getTime() : new Date(r.created_at).getTime(),
+        created_at: new Date(r.created_at).getTime(),
+      }));
     },
     async add(inv) {
-      const { data, error } = await sbx.from('invoices').insert([{ name: inv.name, number: inv.number, amount: Number(inv.amount) }]).select().single();
+      const row = {
+        name: inv.name, number: inv.number, amount: Number(inv.amount),
+        inv_date: new Date(inv.inv_date).toISOString().slice(0, 10), // نوع العمود: date
+      };
+      const { data, error } = await sbx.from('invoices').insert([row]).select().single();
       if (error) throw new Error(sbxError(error));
-      return { id: data.id, name: data.name, number: data.number, amount: Number(data.amount), created_at: new Date(data.created_at).getTime() };
+      return {
+        id: data.id, name: data.name, number: data.number, amount: Number(data.amount),
+        inv_date: new Date(data.inv_date + 'T00:00:00').getTime(),
+        created_at: new Date(data.created_at).getTime(),
+      };
     },
     async update(id, patch) {
-      const p = {}; if ('name' in patch) p.name = patch.name; if ('number' in patch) p.number = patch.number; if ('amount' in patch) p.amount = Number(patch.amount);
+      const p = {};
+      if ('name' in patch) p.name = patch.name;
+      if ('number' in patch) p.number = patch.number;
+      if ('amount' in patch) p.amount = Number(patch.amount);
+      if ('inv_date' in patch) p.inv_date = new Date(patch.inv_date).toISOString().slice(0, 10);
       const { error } = await sbx.from('invoices').update(p).eq('id', id);
       if (error) throw new Error(sbxError(error));
     },
@@ -210,7 +230,7 @@ const DB = (() => {
       if (readJSON(invKeyOf(user.id), []).length === 0) {
         const mk = (monthsAgo, name, number, amount) => {
           const d = new Date(); d.setMonth(d.getMonth() - monthsAgo);
-          return { id: uid(), name, number, amount, created_at: d.getTime() };
+          return { id: uid(), name, number, amount, inv_date: d.getTime(), created_at: Date.now() };
         };
         const samples = [
           mk(0, 'فاتورة كهرباء', 'ELC-1042', 8450),

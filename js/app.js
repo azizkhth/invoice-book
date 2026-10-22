@@ -18,6 +18,11 @@ const money = (n) => fmtN.format(Number(n) || 0);
 const fmtC = new Intl.NumberFormat(LOC, { notation: 'compact', maximumFractionDigits: 1 });
 const fmtDate = new Intl.DateTimeFormat(LOC, { dateStyle: 'medium' });
 const fmtMonth = new Intl.DateTimeFormat(LOC, { month: 'long' });
+const isoDate = (ms) => {
+  const d = new Date(ms);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+};
+const invDateOf = (i) => i.inv_date ?? i.created_at; // تاريخ الفاتورة (البديل: تاريخ التسجيل)
 
 let CURRENT = null;     // المستخدم الحالي
 let EDITING = null;     // معرف الفاتورة قيد التعديل
@@ -69,7 +74,7 @@ function renderStats(list) {
   $('#stMax').title = maxIt ? maxIt.name : '';
   const now = new Date();
   const monthCount = list.filter((i) => {
-    const d = new Date(i.created_at);
+    const d = new Date(invDateOf(i));
     return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
   }).length;
   $('#stMonth').textContent = money(monthCount);
@@ -82,7 +87,7 @@ function renderChart(list) {
   const months = [];
   for (let k = 5; k >= 0; k--) months.push({ date: new Date(now.getFullYear(), now.getMonth() - k, 1), sum: 0 });
   for (const it of list) {
-    const d = new Date(it.created_at);
+    const d = new Date(invDateOf(it));
     const m = months.find((m) => m.date.getFullYear() === d.getFullYear() && m.date.getMonth() === d.getMonth());
     if (m) m.sum += Number(it.amount) || 0;
   }
@@ -112,7 +117,7 @@ function renderTable(all) {
   const q = $('#search').value.trim().toLowerCase();
   const rows = all
     .filter((i) => !q || i.name.toLowerCase().includes(q) || String(i.number).toLowerCase().includes(q))
-    .sort((a, b) => b.created_at - a.created_at);
+    .sort((a, b) => invDateOf(b) - invDateOf(a));
 
   const tbody = $('#tbody');
   tbody.textContent = '';
@@ -123,7 +128,7 @@ function renderTable(all) {
     const tdNum = el('td', 'num', it.number);
     const tdAmt = el('td', 'amount', money(it.amount));
     const tdDate = el('td');
-    tdDate.appendChild(el('span', 'date', fmtDate.format(new Date(it.created_at))));
+    tdDate.appendChild(el('span', 'date', fmtDate.format(new Date(invDateOf(it)))));
     const tdAct = el('td');
     const wrap = el('div', 'row-actions');
     const editBtn = el('button', 'mini-btn edit', 'تعديل');
@@ -178,6 +183,7 @@ function openDlg(inv) {
   $('#invDlgTitle').textContent = inv ? 'تعديل الفاتورة' : 'فاتورة جديدة';
   $('#fName').value = inv ? inv.name : '';
   $('#fNum').value = inv ? inv.number : '';
+  $('#fDate').value = inv ? isoDate(invDateOf(inv)) : isoDate(Date.now());
   $('#fAmt').value = inv ? inv.amount : '';
   $('#dlgErr').hidden = true;
   $('#dlgErr').textContent = '';
@@ -277,9 +283,11 @@ function wire() {
     err.hidden = true;
     const name = $('#fName').value.trim();
     const number = $('#fNum').value.trim();
+    const invDateMs = new Date($('#fDate').value + 'T00:00:00').getTime();
     const amount = parseFloat($('#fAmt').value);
     if (!name) return showErr(err, 'أدخل اسم الفاتورة');
     if (!number) return showErr(err, 'أدخل رقم الفاتورة');
+    if (Number.isNaN(invDateMs)) return showErr(err, 'اختر تاريخ فاتورة صحيحًا');
     if (!(amount > 0)) return showErr(err, 'أدخل مبلغًا أكبر من صفر');
 
     try {
@@ -288,10 +296,10 @@ function wire() {
         return showErr(err, 'رقم الفاتورة مستخدم مسبقًا — جرّب رقمًا آخر');
       }
       if (EDITING) {
-        await DB.updateInvoice(EDITING, { name, number, amount });
+        await DB.updateInvoice(EDITING, { name, number, amount, inv_date: invDateMs });
         toast('تم تحديث الفاتورة ✅');
       } else {
-        await DB.addInvoice({ name, number, amount });
+        await DB.addInvoice({ name, number, amount, inv_date: invDateMs });
         toast('تمت إضافة الفاتورة ✅');
       }
       $('#invDlg').close();

@@ -10,9 +10,13 @@ create table if not exists public.invoices (
   name text not null,
   number text not null,
   amount numeric not null check (amount > 0),
+  inv_date date not null default current_date,
   created_at timestamptz not null default now(),
   updated_at timestamptz
 );
+
+-- إن أنشأت الجدول قبل إضافة عمود التاريخ، نفّذ هذا السطر فقط:
+-- alter table public.invoices add column if not exists inv_date date not null default current_date;
 
 -- 2) تفعيل حماية الصفوف (RLS) — هذا هو اشتراط الورشة
 alter table public.invoices enable row level security;
